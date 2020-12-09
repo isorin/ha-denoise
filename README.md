@@ -65,7 +65,7 @@ Replace source sensors entity IDs with your existing sensor.
 
 **value_delta**:\
   _(number) (Optional)_\
-  The minimum change of value for the source sensor to be considered, smaller changes are ignored.\
+  The minimum change in the source sensor value to be considered, smaller changes are ignored.\
   _Default value: 0_
 
 **precision**:\
