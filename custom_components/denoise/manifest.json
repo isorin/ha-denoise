@@ -1,0 +1,10 @@
+{
+    "codeowners": [
+        "@isorin"
+    ],
+    "dependencies": [],
+    "documentation": "https://github.com/isorin/ha-denoise",
+    "domain": "denoise",
+    "name": "Denoise sensor",
+    "requirements": []
+}
