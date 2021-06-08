@@ -250,7 +250,7 @@ class DenoiseSensor(Entity):
         now_ts = dt_util.utcnow()
 
         update_time = (self._has_time_delta and (self._last_update is None or
-            now_ts - self._last_update > self._time_delta))
+            now_ts - self._last_update >= self._time_delta))
 
         if time_trigger and not update_time:
             return
