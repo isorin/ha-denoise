@@ -47,16 +47,14 @@ class DOMAIN_TYPE:
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORM_SCHEMA = vol.All(
-    PLATFORM_SCHEMA.extend(
-        {
-            vol.Required(CONF_ENTITY_ID): cv.entity_id,
-            vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-            vol.Optional(CONF_TIME_DELTA): cv.time_period,
-            vol.Optional(CONF_VALUE_DELTA, default=0): float,
-            vol.Optional(CONF_PRECISION, default=1): int,
-        }
-    ),
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
+    {
+        vol.Required(CONF_ENTITY_ID): cv.entity_id,
+        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+        vol.Optional(CONF_TIME_DELTA): cv.time_period,
+        vol.Optional(CONF_VALUE_DELTA, default=0): vol.Any(int, float),
+        vol.Optional(CONF_PRECISION, default=1): int,
+    }
 )
 
 # pylint: disable=unused-argument
