@@ -269,10 +269,10 @@ class DenoiseSensor(Entity):
             update_value = self._last_value is None or abs(new_value - self._last_value) >= self._value_delta
 
             if update_value or update_time:
-                self._last_value = new_value
                 new_state = round(new_value, self._precision)
                 if update_time or new_state != self._state:
                     self._state = new_state
+                    self._last_value = new_value
                     self._last_update = now_ts
                     self._updated = True
                     _LOGGER.info("Update [%s] time_trig[%d] upd_time[%d] upt_val[%d] val[%s] st[%s]",
