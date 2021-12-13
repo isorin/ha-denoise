@@ -39,6 +39,7 @@ DEFAULT_NAME = "Denoise sensor"
 CONF_TIME_DELTA = "time_delta"
 CONF_VALUE_DELTA = "value_delta"
 CONF_PRECISION = "precision"
+CONF_UPDATE_INTERVAL = "update_interval"
 
 class DOMAIN_TYPE:
     WEATHER = 1
@@ -53,6 +54,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Optional(CONF_TIME_DELTA): cv.time_period,
         vol.Optional(CONF_VALUE_DELTA, default=0): vol.Any(int, float),
+        vol.Optional(CONF_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PRECISION, default=1): int,
     }
 )
@@ -63,14 +65,15 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     name = config.get(CONF_NAME)
     time_delta = config.get(CONF_TIME_DELTA)
     value_delta = config.get(CONF_VALUE_DELTA)
+    update_interval = config.get(CONF_UPDATE_INTERVAL)
     entity_id = config.get(CONF_ENTITY_ID)
     precision = config.get(CONF_PRECISION)
 
-    _LOGGER.info("Setup [%s] time_delta[%s] val_delta[%s] prec[%s]",
-        name, time_delta, value_delta, precision)
+    _LOGGER.info("Setup [%s] time_delta[%s] val_delta[%s] prec[%s] update_interval[%s]",
+        name, time_delta, value_delta, precision, update_interval)
 
     async_add_entities(
-        [DenoiseSensor(hass, name, time_delta, value_delta, entity_id, precision)]
+        [DenoiseSensor(hass, name, time_delta, value_delta, entity_id, precision, update_interval)]
     )
 
 # pylint: disable=r0902
@@ -86,12 +89,14 @@ class DenoiseSensor(Entity):
         value_delta,
         entity_id,
         precision,
+        update_interval,
     ):
         """Initialize the sensor."""
         self._hass = hass
         self._name = name
         self._time_delta = time_delta
         self._value_delta = value_delta
+        self._update_interval = update_interval
         self._src_entity_id = entity_id
         self._precision = precision
         self._state = None
@@ -102,6 +107,7 @@ class DenoiseSensor(Entity):
         self._last_value = None
         self._last_update = None
         self._updated = False
+        self._last_time_ref = None
 
     @property
     def force_update(self) -> bool:
@@ -112,14 +118,14 @@ class DenoiseSensor(Entity):
         return self._updated
 
     @property
-    def _has_time_delta(self) -> bool:
-        """Return True if sensor has a time delta setting."""
-        return self._time_delta is not None
+    def _has_update_interval(self) -> bool:
+        """Return True if sensor has an update_interval setting."""
+        return self._update_interval is not None
 
     @property
     def should_poll(self) -> bool:
         """Return the polling state."""
-        return self._has_time_delta
+        return self._has_update_interval
 
     @property
     def name(self) -> Optional[str]:
@@ -174,7 +180,7 @@ class DenoiseSensor(Entity):
 
     def update(self):
         """Update the sensor state if it needed."""
-        if self._has_time_delta:
+        if self._has_update_interval:
             self._update_state(time_trigger=True)
 
     @staticmethod
@@ -247,11 +253,11 @@ class DenoiseSensor(Entity):
         self._updated = False
         now_ts = dt_util.utcnow()
 
-        update_time = (self._has_time_delta and (self._last_update is None or
-            now_ts - self._last_update >= self._time_delta))
+        update_time = (self._has_update_interval and (self._last_update is None or
+            now_ts - self._last_update >= self._update_interval))
 
-        if time_trigger and not update_time:
-            return
+        # if time_trigger and not update_time:
+        #     return
 
         state = self._hass.states.get(self._src_entity_id)  # type: LazyState
         if state is None:
@@ -267,18 +273,33 @@ class DenoiseSensor(Entity):
 
         if isinstance(new_value, numbers.Number):
             update_value = self._last_value is None or abs(new_value - self._last_value) >= self._value_delta
+            new_state = round(new_value, self._precision)
+            state_changed = new_state != self._state
 
-            if update_value or update_time:
-                new_state = round(new_value, self._precision)
-                if update_time or new_state != self._state:
-                    self._state = new_state
-                    self._last_value = new_value
-                    self._last_update = now_ts
-                    self._updated = True
-                    _LOGGER.info("Update [%s] time_trig[%d] upd_time[%d] upt_val[%d] val[%s] st[%s]",
-                        self._name, time_trigger, update_time, update_value, new_value, new_state)
+            if self._time_delta is not None and not update_time:
+                if state_changed:
+                    if self._last_time_ref is not None:
+                        update_time = now_ts - self._last_time_ref >= self._time_delta
+                        # if update_time:
+                        #     _LOGGER.warn("Time_delta [%s] diff[%s] val[%s->%s] st[%s->%s]",
+                        #         self._name, now_ts - self._last_time_ref, self._last_value, new_value, self._state, new_state)
+                else:
+                    self._last_time_ref = now_ts
+
+            if update_time or (update_value and state_changed):
+                # _LOGGER.warn("Update [%s] time_trig[%d] upd_time[%d] upt_val[%d] val[%s->%s] st[%s->%s]",
+                #     self._name, time_trigger, update_time, update_value, self._last_value, new_value, self._state, new_state)
+                self._state = new_state
+                self._last_update = now_ts
+                self._last_time_ref = now_ts
+                self._updated = True
+
+            if update_value:
+                self._last_value = new_value
+
         else:
             self._last_value = None
             self._state = None
             self._last_update = now_ts
+            self._last_time_ref = now_ts
             self._updated = True

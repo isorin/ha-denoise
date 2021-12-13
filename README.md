@@ -56,28 +56,33 @@ Replace source sensors entity IDs with your existing sensor.
   Name to use in the frontend.\
   _Default value: "Denoise sensor"_
 
-**time_delta**:\
-  _(time) (Optional)_\
-  If the sensor state is not updated in this time period, a new state is forced (even if equal to the previous state).\
-  If time_delta is not specified then a new state is not forced.\
-  The time_delta can help with big gaps in dashboards due to missing recorded changes for long periods of time.
-  _Default value: None_
-
 **value_delta**:\
   _(number) (Optional)_\
   The minimum change in the source sensor value to be considered, smaller changes are ignored.\
   _Default value: 0_
+
+**time_delta**:\
+  _(time) (Optional)_\
+  If a state change is detected (taking into account precision) for time_delta then update state regardless of value_delta.\
+  _Default value: None_
 
 **precision**:\
   _(number) (Optional)_\
   The number of decimals to use when rounding the sensor state.\
   _Default value: 1_
 
+**update_interval**:\
+  _(time) (Optional)_\
+  If the sensor state is not updated in this time period, a new state is forced (even if equal to the previous state).\
+  If update_interval is not specified then a new state is not forced.\
+  The update_interval can help with big gaps in dashboards due to missing recorded changes for long periods of time.
+  _Default value: None_
+
 **scan_interval**:\
   _(number) (Optional)_\
   This is a standard HA variable and dictates the update frequency in seconds for this sensor.\
-  The verification of the time_delta interval happens at this frequency so the actual force_update interval can be higher than time_delta.\
-  _Default value: 30_
+  The verification of the update_interval happens at this frequency so the actual forced update interval can be higher than the value of update_interval.\
+  _Default value: None_
 
 **entity_id**:\
   _(string) (Required)_\
