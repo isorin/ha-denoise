@@ -24,11 +24,12 @@ To create a new temperature denoise filter sensor based on an existing temperatu
 sensor:
   - platform: denoise
     name: "Multi Sensor 1 Temperature Avg"
-    time_delta: "00:30:00"
-    value_delta: 0.25
     precision: 1
+    value_delta: 0.075
+    time_delta: "00:05:00"
+    update_interval: "01:00:00"
     scan_interval: 600
-    entity_id: sensor.multi_sensor1_temperature
+    entity_id: sensor.multi_sensor_1_temperature
 ```
 
 To create a new humidity denoise filter sensor based on an existing humidity sensor:
@@ -37,11 +38,11 @@ To create a new humidity denoise filter sensor based on an existing humidity sen
 sensor:
   - platform: denoise
     name: "Multi Sensor 1 Humidity Avg"
-    time_delta: "00:30:00"
-    value_delta: 0.5
-    precision: 0
+    precision: 1
+    value_delta: 0.3
+    update_interval: "01:00:00"
     scan_interval: 600
-    entity_id: sensor.multi_sensor1_humidity
+    entity_id: sensor.multi_sensor_1_humidity
 ```
 
 Replace source sensors entity IDs with your existing sensor.
