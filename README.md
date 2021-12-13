@@ -6,7 +6,7 @@
 Credits: The Denoise sensor code is based on the [Average Sensor for Home Assistant](https://github.com/Limych/ha-average) which I used as a source and inspiration.
 
 The Denoise sensor acts as a noise removal filter by filtering out small variations in the output of a source sensor.
-Sometimes sensors are too "sensitive" and can produce quite a bit of white noise which ends up in the HA recorder database or even the long term storage DB.
+Sometimes sensors can produce quite a bit of white noise which ends up in the HA recorder database or even the long term storage DB.
 
 ## Installation
 
