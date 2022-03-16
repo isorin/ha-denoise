@@ -6,7 +6,7 @@
 Credits: The Denoise sensor code is based on the [Average Sensor for Home Assistant](https://github.com/Limych/ha-average) which I used as a source and inspiration.
 
 The Denoise sensor acts as a noise removal filter by filtering out small variations in the output of a source sensor.
-Sometimes sensors can produce quite a bit of white noise which ends up in the HA recorder database or even the long term storage DB.
+Sometimes sensors can produce quite a bit of white noise which ends up in the HA recorder database or the long term storage DB.
 
 ## Installation
 
@@ -25,9 +25,9 @@ sensor:
   - platform: denoise
     name: "Multi Sensor 1 Temperature Avg"
     precision: 1
-    value_delta: 0.075
-    time_delta: "00:05:00"
-    update_interval: "01:00:00"
+    value_delta: 0.06
+    average_interval: "00:01:30"
+    update_interval: "00:30:00"
     scan_interval: 600
     entity_id: sensor.multi_sensor_1_temperature
 ```
@@ -62,15 +62,16 @@ Replace source sensors entity IDs with your existing sensor.
   The minimum change in the source sensor value to be considered, smaller changes are ignored.\
   _Default value: 0_
 
-**time_delta**:\
-  _(time) (Optional)_\
-  If a state change is detected (taking into account precision) for time_delta then update state regardless of value_delta.\
-  _Default value: None_
-
 **precision**:\
   _(number) (Optional)_\
   The number of decimals to use when rounding the sensor state.\
   _Default value: 1_
+
+**average_interval**:\
+  _(time) (Optional)_\
+  If defined then it averages the source sensor over this period of time.\
+  It is only updated (old values removed, new values added) when the source sensor emits new values.\
+  _Default value: None_
 
 **update_interval**:\
   _(time) (Optional)_\

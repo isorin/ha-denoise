@@ -6,6 +6,7 @@ import logging
 import math
 import numbers
 from typing import Union, Optional, Dict, Any
+from collections import deque
 
 import homeassistant.util.dt as dt_util
 import voluptuous as vol
@@ -36,7 +37,7 @@ from homeassistant.util.unit_system import TEMPERATURE_UNITS
 
 DEFAULT_NAME = "Denoise sensor"
 
-CONF_TIME_DELTA = "time_delta"
+CONF_AVERAGE_INTERVAL = "average_interval"
 CONF_VALUE_DELTA = "value_delta"
 CONF_PRECISION = "precision"
 CONF_UPDATE_INTERVAL = "update_interval"
@@ -52,7 +53,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_ENTITY_ID): cv.entity_id,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_TIME_DELTA): cv.time_period,
+        vol.Optional(CONF_AVERAGE_INTERVAL): cv.time_period,
         vol.Optional(CONF_VALUE_DELTA, default=0): vol.Any(int, float),
         vol.Optional(CONF_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PRECISION, default=1): int,
@@ -63,17 +64,17 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Set up platform."""
     name = config.get(CONF_NAME)
-    time_delta = config.get(CONF_TIME_DELTA)
+    average_interval = config.get(CONF_AVERAGE_INTERVAL)
     value_delta = config.get(CONF_VALUE_DELTA)
     update_interval = config.get(CONF_UPDATE_INTERVAL)
     entity_id = config.get(CONF_ENTITY_ID)
     precision = config.get(CONF_PRECISION)
 
-    _LOGGER.info("Setup [%s] time_delta[%s] val_delta[%s] prec[%s] update_interval[%s]",
-        name, time_delta, value_delta, precision, update_interval)
+    _LOGGER.info("Setup [%s] entity_id[%s] val_delta[%s] prec[%s] average_interval[%s] update_interval[%s]",
+        name, entity_id, value_delta, precision, average_interval, update_interval)
 
     async_add_entities(
-        [DenoiseSensor(hass, name, time_delta, value_delta, entity_id, precision, update_interval)]
+        [DenoiseSensor(hass, name, entity_id, value_delta, precision, average_interval, update_interval)]
     )
 
 # pylint: disable=r0902
@@ -85,20 +86,20 @@ class DenoiseSensor(Entity):
         self,
         hass,
         name,
-        time_delta,
-        value_delta,
         entity_id,
+        value_delta,
         precision,
+        average_interval,
         update_interval,
     ):
         """Initialize the sensor."""
         self._hass = hass
         self._name = name
-        self._time_delta = time_delta
-        self._value_delta = value_delta
-        self._update_interval = update_interval
         self._src_entity_id = entity_id
         self._precision = precision
+        self._value_delta = value_delta
+        self._average_interval = average_interval
+        self._update_interval = update_interval
         self._state = None
         self._unit_of_measurement = None
         self._device_class = None
@@ -107,7 +108,7 @@ class DenoiseSensor(Entity):
         self._last_value = None
         self._last_update = None
         self._updated = False
-        self._last_time_ref = None
+        self._avg_deque = None if average_interval is None else deque(())
 
     @property
     def force_update(self) -> bool:
@@ -247,6 +248,17 @@ class DenoiseSensor(Entity):
 
         return state
 
+    def _get_avg_value(self, now_ts, new_value):
+        # remove any old values from the left
+        while self._avg_deque and now_ts - self._avg_deque[0][0] > self._average_interval:
+            self._avg_deque.popleft()
+        # insert new value to the right
+        self._avg_deque.append((now_ts, new_value))
+        avg_val = sum(v[1] for v in self._avg_deque) / len(self._avg_deque)
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug("[%s] avg_val [%s] %s", self._name, avg_val, [v[1] for v in self._avg_deque])
+        return avg_val
+
     def _update_state(self, time_trigger=False):  # pylint: disable=r0914,r0912,r0915
         """Update the sensor state."""
 
@@ -256,8 +268,8 @@ class DenoiseSensor(Entity):
         update_time = (self._has_update_interval and (self._last_update is None or
             now_ts - self._last_update >= self._update_interval))
 
-        # if time_trigger and not update_time:
-        #     return
+        if time_trigger and not update_time:
+            return
 
         state = self._hass.states.get(self._src_entity_id)  # type: LazyState
         if state is None:
@@ -272,26 +284,21 @@ class DenoiseSensor(Entity):
         new_value = self._get_state_value(state)
 
         if isinstance(new_value, numbers.Number):
+            _LOGGER.debug("[%s] new_value [%s]", self._name, new_value)
+
+            if self._average_interval is not None:
+                new_value = self._get_avg_value(now_ts, new_value)
+
             update_value = self._last_value is None or abs(new_value - self._last_value) >= self._value_delta
             new_state = round(new_value, self._precision)
             state_changed = new_state != self._state
 
-            if self._time_delta is not None and not update_time:
-                if state_changed:
-                    if self._last_time_ref is not None:
-                        update_time = now_ts - self._last_time_ref >= self._time_delta
-                        # if update_time:
-                        #     _LOGGER.warn("Time_delta [%s] diff[%s] val[%s->%s] st[%s->%s]",
-                        #         self._name, now_ts - self._last_time_ref, self._last_value, new_value, self._state, new_state)
-                else:
-                    self._last_time_ref = now_ts
-
             if update_time or (update_value and state_changed):
-                # _LOGGER.warn("Update [%s] time_trig[%d] upd_time[%d] upt_val[%d] val[%s->%s] st[%s->%s]",
-                #     self._name, time_trigger, update_time, update_value, self._last_value, new_value, self._state, new_state)
+                if _LOGGER.isEnabledFor(logging.DEBUG):
+                    _LOGGER.debug("Update [%s] time_trig[%d] upd_time[%d] upt_val[%d] val[%s->%s] st[%s->%s]",
+                        self._name, time_trigger, update_time, update_value, self._last_value, new_value, self._state, new_state)
                 self._state = new_state
                 self._last_update = now_ts
-                self._last_time_ref = now_ts
                 self._updated = True
 
             if update_value:
@@ -301,5 +308,4 @@ class DenoiseSensor(Entity):
             self._last_value = None
             self._state = None
             self._last_update = now_ts
-            self._last_time_ref = now_ts
             self._updated = True
