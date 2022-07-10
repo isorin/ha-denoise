@@ -13,7 +13,7 @@ import voluptuous as vol
 from homeassistant.components import history
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.group import expand_entity_ids
-from homeassistant.components.history import LazyState
+from homeassistant.components.recorder.models import LazyState
 from homeassistant.components.water_heater import DOMAIN as WATER_HEATER_DOMAIN
 from homeassistant.components.weather import DOMAIN as WEATHER_DOMAIN
 from homeassistant.const import (
