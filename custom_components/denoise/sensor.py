@@ -32,7 +32,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_change
-from homeassistant.util.temperature import convert as convert_temperature
+from homeassistant.util.unit_conversion import TemperatureConverter
 from homeassistant.util.unit_system import TEMPERATURE_UNITS
 
 DEFAULT_NAME = "Denoise sensor"
@@ -228,7 +228,7 @@ class DenoiseSensor(Entity):
         if not self._has_state(temperature):
             return None
 
-        temperature = convert_temperature(float(temperature), self._src_uom, self._unit_of_measurement)
+        temperature = TemperatureConverter.convert(float(temperature), self._src_uom, self._unit_of_measurement)
         return temperature
 
     def _get_state_value(self, state: LazyState) -> Optional[float]:
