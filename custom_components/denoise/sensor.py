@@ -268,7 +268,7 @@ class DenoiseSensor(Entity):
         update_time = (self._has_update_interval and (self._last_update is None or
             now_ts - self._last_update >= self._update_interval))
 
-        if time_trigger and not update_time:
+        if time_trigger and (not update_time and self._average_interval is None):
             return
 
         state = self._hass.states.get(self._src_entity_id)  # type: LazyState
