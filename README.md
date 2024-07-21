@@ -57,6 +57,11 @@ Replace source sensors entity IDs with your existing sensor.
   Name to use in the frontend.\
   _Default value: "Denoise sensor"_
 
+**unique_id**:\
+  _(string) (Optional)_\
+  Sensor unique ID.\
+  _Default value: None_
+
 **value_delta**:\
   _(number) (Optional)_\
   The minimum change in the source sensor value to be considered, smaller changes are ignored.\

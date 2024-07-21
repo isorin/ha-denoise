@@ -14,10 +14,16 @@ from homeassistant.components import history
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.group import expand_entity_ids
 from homeassistant.components.recorder.models import LazyState
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass
+)
 from homeassistant.components.water_heater import DOMAIN as WATER_HEATER_DOMAIN
 from homeassistant.components.weather import DOMAIN as WEATHER_DOMAIN
 from homeassistant.const import (
     CONF_NAME,
+    CONF_UNIQUE_ID,
     CONF_ENTITY_ID,
     EVENT_HOMEASSISTANT_START,
     ATTR_UNIT_OF_MEASUREMENT,
@@ -25,13 +31,19 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     ATTR_ICON,
     ATTR_DEVICE_CLASS,
-    DEVICE_CLASS_TEMPERATURE,
 )
-from homeassistant.core import callback, split_entity_id
+
+from homeassistant.core import (
+    Event,
+    EventStateChangedData,
+    callback,
+    split_entity_id
+)
+
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.event import async_track_state_change
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util.unit_conversion import TemperatureConverter
 from homeassistant.util.unit_system import TEMPERATURE_UNITS
 
@@ -53,6 +65,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_ENTITY_ID): cv.entity_id,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+        vol.Optional(CONF_UNIQUE_ID): cv.string,
         vol.Optional(CONF_AVERAGE_INTERVAL): cv.time_period,
         vol.Optional(CONF_VALUE_DELTA, default=0): vol.Any(int, float),
         vol.Optional(CONF_UPDATE_INTERVAL): cv.time_period,
@@ -64,21 +77,22 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Set up platform."""
     name = config.get(CONF_NAME)
+    unique_id = config.get(CONF_UNIQUE_ID)
     average_interval = config.get(CONF_AVERAGE_INTERVAL)
     value_delta = config.get(CONF_VALUE_DELTA)
     update_interval = config.get(CONF_UPDATE_INTERVAL)
     entity_id = config.get(CONF_ENTITY_ID)
     precision = config.get(CONF_PRECISION)
 
-    _LOGGER.info("Setup [%s] entity_id[%s] val_delta[%s] prec[%s] average_interval[%s] update_interval[%s]",
-        name, entity_id, value_delta, precision, average_interval, update_interval)
+    _LOGGER.info("Setup [%s] unique_id[%s] entity_id[%s] val_delta[%s] prec[%s] average_interval[%s] update_interval[%s]",
+        name, unique_id, value_delta, precision, average_interval, update_interval)
 
     async_add_entities(
-        [DenoiseSensor(hass, name, entity_id, value_delta, precision, average_interval, update_interval)]
+        [DenoiseSensor(hass, name, unique_id, entity_id, value_delta, precision, average_interval, update_interval)]
     )
 
 # pylint: disable=r0902
-class DenoiseSensor(Entity):
+class DenoiseSensor(SensorEntity):
     """Implementation of the Denoise sensor."""
 
     # pylint: disable=r0913
@@ -86,6 +100,7 @@ class DenoiseSensor(Entity):
         self,
         hass,
         name,
+        unique_id,
         entity_id,
         value_delta,
         precision,
@@ -95,6 +110,7 @@ class DenoiseSensor(Entity):
         """Initialize the sensor."""
         self._hass = hass
         self._name = name
+        self._unique_id = unique_id
         self._src_entity_id = entity_id
         self._precision = precision
         self._value_delta = value_delta
@@ -134,6 +150,11 @@ class DenoiseSensor(Entity):
         return self._name
 
     @property
+    def unique_id(self) -> Optional[str]:
+        """Return the unique ID of the sensor."""
+        return self._unique_id
+
+    @property
     def available(self) -> bool:
         """Return True if entity is available."""
         return self._state is not None
@@ -154,6 +175,11 @@ class DenoiseSensor(Entity):
         return self._device_class
 
     @property
+    def state_class(self) -> SensorStateClass | None:
+        """Return the state class of this entity."""
+        return SensorStateClass.MEASUREMENT
+
+    @property
     def icon(self) -> Optional[str]:
         """Return the icon to use in the frontend."""
         return self._icon
@@ -162,7 +188,7 @@ class DenoiseSensor(Entity):
         """Register callbacks."""
         # pylint: disable=unused-argument
         @callback
-        def sensor_state_listener(entity, old_state, new_state):
+        def sensor_state_listener(event: Event[EventStateChangedData]):
             """Handle device state changes."""
             self._update_state()
             if self.force_update:
@@ -172,10 +198,12 @@ class DenoiseSensor(Entity):
         @callback
         def sensor_startup(event):
             """Track changes and initial update"""
-            async_track_state_change(
-                self._hass, self._src_entity_id, sensor_state_listener
+            async_track_state_change_event(
+                self._hass,
+                [self._src_entity_id],
+                sensor_state_listener,
             )
-            sensor_state_listener(None, None, None)
+            sensor_state_listener(None)
 
         self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, sensor_startup)
 
@@ -197,7 +225,7 @@ class DenoiseSensor(Entity):
         """Init entity attributes"""
         # Assume a temperature entity
         self._temperature_mode = True
-        self._device_class = DEVICE_CLASS_TEMPERATURE
+        self._device_class = SensorDeviceClass.TEMPERATURE
         self._icon = "mdi:thermometer"
         self._unit_of_measurement = self._hass.config.units.temperature_unit
         self._src_uom = self._unit_of_measurement
