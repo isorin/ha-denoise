@@ -64,7 +64,8 @@ Replace source sensors entity IDs with your existing sensor.
 
 **value_delta**:\
   _(number) (Optional)_\
-  The minimum change in the source sensor value to be considered, smaller changes are ignored.\
+  The minimum change from the last published value, using the unrounded readings or averages.\
+  Set to `-1` to publish the first valid reading and then use `update_interval` for further numeric updates.\
   _Default value: 0_
 
 **precision**:\
@@ -74,22 +75,25 @@ Replace source sensors entity IDs with your existing sensor.
 
 **average_interval**:\
   _(time) (Optional)_\
-  If defined then it averages the source sensor over this period of time.\
-  It is only updated (old values removed, new values added) when the source sensor emits new values.\
+  Averages the readings in this time window. Source updates add samples to the window.\
+  A fallback scan reuses any samples still in the window and uses the current source value when the window is empty.\
   _Default value: None_
 
 **update_interval**:\
   _(time) (Optional)_\
-  If the sensor state is not updated in this time period, a new state is forced (even if equal to the previous state).\
-  If update_interval is not specified then a new state is not forced.\
-  The update_interval can help with big gaps in dashboards due to missing recorded changes for long periods of time.
+  Once this time has passed since the last publication, a different rounded value can be published regardless of `value_delta`.\
+  Without this option, numeric updates are driven by source readings and `value_delta`.\
   _Default value: None_
 
 **scan_interval**:\
   _(number) (Optional)_\
-  This is a standard HA variable and dictates the update frequency in seconds for this sensor.\
-  The verification of the update_interval happens at this frequency so the actual forced update interval can be higher than the value of update_interval.\
-  _Default value: None_
+  Home Assistant's polling interval in seconds. Polling is enabled when `update_interval` is set.\
+  A scan can publish only when an update is due, the source has gone at least one `update_interval` without an update, and the rounded value differs.
+
+**log_warn**\
+  _(boolean) (Optional)_\
+  Set to `true` to log this sensor's debug and informational messages at warning level.\
+  _Default value: false_
 
 **entity_id**:\
   _(string) (Required)_\

@@ -53,6 +53,7 @@ CONF_AVERAGE_INTERVAL = "average_interval"
 CONF_VALUE_DELTA = "value_delta"
 CONF_PRECISION = "precision"
 CONF_UPDATE_INTERVAL = "update_interval"
+CONF_LOG_WARN = "log_warn"
 
 class DOMAIN_TYPE:
     WEATHER = 1
@@ -70,6 +71,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_VALUE_DELTA, default=0): vol.Any(int, float),
         vol.Optional(CONF_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PRECISION, default=1): int,
+        vol.Optional(CONF_LOG_WARN, default=False): cv.boolean,
     }
 )
 
@@ -83,12 +85,21 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     update_interval = config.get(CONF_UPDATE_INTERVAL)
     entity_id = config.get(CONF_ENTITY_ID)
     precision = config.get(CONF_PRECISION)
+    log_warn = config[CONF_LOG_WARN]
+    info_level = logging.WARNING if log_warn else logging.INFO
 
-    _LOGGER.info("Setup [%s] unique_id[%s] entity_id[%s] val_delta[%s] prec[%s] average_interval[%s] update_interval[%s]",
-        name, unique_id, value_delta, precision, average_interval, update_interval)
+    _LOGGER.log(
+        info_level,
+        "Setup [%s] unique_id %s entity_id %s val_delta %s prec %s "
+        "average_interval %s update_interval %s",
+        name, unique_id, entity_id, value_delta, precision, average_interval, update_interval,
+    )
 
     async_add_entities(
-        [DenoiseSensor(hass, name, unique_id, entity_id, value_delta, precision, average_interval, update_interval)]
+        [DenoiseSensor(
+            hass, name, unique_id, entity_id, value_delta, precision,
+            average_interval, update_interval, log_warn=log_warn,
+        )]
     )
 
 # pylint: disable=r0902
@@ -106,8 +117,11 @@ class DenoiseSensor(SensorEntity):
         precision,
         average_interval,
         update_interval,
+        log_warn=False,
     ):
         """Initialize the sensor."""
+        self._info_level = logging.WARNING if log_warn else logging.INFO
+        self._debug_level = logging.WARNING if log_warn else logging.DEBUG
         self._hass = hass
         self._name = name
         self._unique_id = unique_id
@@ -276,15 +290,22 @@ class DenoiseSensor(SensorEntity):
 
         return state
 
-    def _get_avg_value(self, now_ts, new_value):
+    def _get_avg_value(self, now_ts, new_value, time_trigger):
         # remove any old values from the left
         while self._avg_deque and now_ts - self._avg_deque[0][0] > self._average_interval:
             self._avg_deque.popleft()
-        # insert new value to the right
-        self._avg_deque.append((now_ts, new_value))
+        if not time_trigger:
+            self._avg_deque.append((now_ts, new_value))
+        if not self._avg_deque:
+            return new_value
+
         avg_val = sum(v[1] for v in self._avg_deque) / len(self._avg_deque)
-        if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug("[%s] avg_val [%s] %s", self._name, avg_val, [v[1] for v in self._avg_deque])
+        if _LOGGER.isEnabledFor(self._debug_level):
+            samples = ", ".join(str(value) for _, value in self._avg_deque)
+            _LOGGER.log(
+                self._debug_level, "[%s] avg_val %.3f samples [%s]",
+                self._name, avg_val, samples,
+            )
         return avg_val
 
     def _update_state(self, time_trigger=False):  # pylint: disable=r0914,r0912,r0915
@@ -296,12 +317,22 @@ class DenoiseSensor(SensorEntity):
         update_time = (self._has_update_interval and (self._last_update is None or
             now_ts - self._last_update >= self._update_interval))
 
-        if time_trigger and (not update_time and self._average_interval is None):
+        _LOGGER.log(
+            self._debug_level, "Update [%s] time_trig %d upd_time %d",
+            self._name, time_trigger, update_time,
+        )
+
+        # Skip scans until the publish interval has elapsed.
+        if time_trigger and not update_time:
             return
 
         state = self._hass.states.get(self._src_entity_id)  # type: LazyState
         if state is None:
             _LOGGER.error('Unable to find entity "%s"', self._src_entity_id)
+            return
+
+        # A scan is a fallback after the source has been quiet for one update interval.
+        if time_trigger and now_ts - state.last_updated < self._update_interval:
             return
 
         # if not initialised
@@ -312,25 +343,29 @@ class DenoiseSensor(SensorEntity):
         new_value = self._get_state_value(state)
 
         if isinstance(new_value, numbers.Number):
-            _LOGGER.debug("[%s] new_value [%s]", self._name, new_value)
+            _LOGGER.log(self._debug_level, "[%s] new_value %s", self._name, new_value)
 
             if self._average_interval is not None:
-                new_value = self._get_avg_value(now_ts, new_value)
+                new_value = self._get_avg_value(now_ts, new_value, time_trigger)
 
-            update_value = self._last_value is None or abs(new_value - self._last_value) >= self._value_delta
+            update_value = self._last_value is None or (
+                self._value_delta != -1
+                and abs(new_value - self._last_value) >= self._value_delta
+            )
             new_state = round(new_value, self._precision)
             state_changed = new_state != self._state
 
-            if update_time or (update_value and state_changed):
-                if _LOGGER.isEnabledFor(logging.DEBUG):
-                    _LOGGER.debug("Update [%s] time_trig[%d] upd_time[%d] upt_val[%d] val[%s->%s] st[%s->%s]",
-                        self._name, time_trigger, update_time, update_value, self._last_value, new_value, self._state, new_state)
+            if state_changed and (update_time or update_value):
+                _LOGGER.log(
+                    self._info_level,
+                    "Update [%s] time_trig %d upd_time %d upt_val %d val %s->%s st %s->%s",
+                    self._name, time_trigger, update_time, update_value,
+                    self._last_value, new_value, self._state, new_state,
+                )
                 self._state = new_state
+                self._last_value = new_value
                 self._last_update = now_ts
                 self._updated = True
-
-            if update_value:
-                self._last_value = new_value
 
         else:
             self._last_value = None
