@@ -98,3 +98,12 @@ Replace source sensors entity IDs with your existing sensor.
 **entity_id**:\
   _(string) (Required)_\
   The entity ID of the sensor you want to use as source.
+
+## Running the tests
+
+From the repository root, use a Python environment with Home Assistant installed.
+The tests use simulated sensor readings and run without a running Home Assistant instance.
+
+```sh
+python -m unittest discover -s tests -v
+```
